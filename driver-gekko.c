@@ -58,19 +58,22 @@ void dumpbuffer(struct cgpu_info *compac, int LOG_LEVEL, char *note, unsigned ch
 		for(; i < 768 && i < len - 1; ++i) {
 			*pout++ = hex[(*ptr>>4)&0xF];
 			*pout++ = hex[(*ptr++)&0xF];
-			if (i % 42 == 41) {
-				*pout = 0;
-				pout = str;
-				applog(LOG_LEVEL, "%i: %s %s: %s", compac->cgminer_id, compac->drv->name, note, str);
-			} else {
-				*pout++ = ':';
-			}
+			*pout++ = ':';
 		}
 		*pout++ = hex[(*ptr>>4)&0xF];
 		*pout++ = hex[(*ptr)&0xF];
 		*pout = 0;
 		applog(LOG_LEVEL, "%d: %s %d - %s: %s", compac->cgminer_id, compac->drv->name, compac->device_id, note, str);
 	}
+}
+
+void pretty_hex(unsigned char * hex, uint32_t len) {
+	uint32_t i;
+	printf("[");
+	for (i=0; i<len-1; i++) {
+		printf("%02X ", hex[i]);
+	}
+	printf("%02X]\n", hex[len-1]);
 }
 
 static int compac_micro_send(struct cgpu_info *compac, uint8_t cmd, uint8_t channel, uint8_t value)
@@ -174,6 +177,7 @@ applog(LOG_ERR, "%s()  [%02x %02x %02x %02x %02x %02x %02x %02x]", __func__,
 
 	int log_level = (bytes < info->task_len) ? LOG_INFO : LOG_INFO;
 
+	//applog(LOG_INFO, "length: %d", bytes);
 	dumpbuffer(compac, log_level, "TX", info->cmd, bytes);
 	usb_write(compac, (char *)(info->cmd), bytes, &read_bytes, C_REQUESTRESULTS);
 
@@ -189,7 +193,7 @@ static void ping_freq(struct cgpu_info *compac, int asic)
 	if (info->asic_type == BM1397)
 	{
 		// ignored - "can't set the chip freq" has no useful work-around
-		// asic check-in failure will be handled by missing nonces 
+		// asic check-in failure will be handled by missing nonces
 		ping = true;
 	}
 	else if (info->asic_type == BM1387)
@@ -656,8 +660,11 @@ static void compac_send_chain_inactive(struct cgpu_info *compac)
 		compac_send2(compac, init6, sizeof(init6), 8 * sizeof(init6) - 8, "init6");
 		cgsleep_ms(100);
 
-		unsigned char baudrate[] = { 0x51, 0x09, 0x00, 0x18, 0x00, 0x00, 0x61, 0x31, 0x00 }; // lo 1.51M
-		info->bauddiv = 1; // 1.5M
+		//unsigned char baudrate[] = { 0x51, 0x09, 0x00, 0x18, 0x00, 0x00, 0x61, 0x31, 0x00 }; // lo 1.51M
+		//info->bauddiv = 1; // 1.5M
+
+		unsigned char baudrate[] = { 0x51, 0x09, 0x00, 0x18, 0x00, 0x00, 0x7A, 0x31, 0x00 }; // 116K
+		info->bauddiv = 26; // 116K
 
 #ifdef WIN32___fixme_zzz
 		if (info->midstates == 4)
@@ -995,19 +1002,31 @@ static void compac_toggle_reset(struct cgpu_info *compac)
 	usb_transfer(compac, FTDI_TYPE_OUT, FTDI_REQUEST_RESET, FTDI_VALUE_PURGE_TX, info->interface, C_PURGETX);
 	usb_transfer(compac, FTDI_TYPE_OUT, FTDI_REQUEST_RESET, FTDI_VALUE_PURGE_RX, info->interface, C_PURGERX);
 
-	usb_val = (FTDI_BITMODE_CBUS << 8) | 0xF2; // low byte: bitmask - 1111 0010 - CB1(HI)
-	usb_transfer(compac, FTDI_TYPE_OUT, FTDI_REQUEST_BITMODE, usb_val, info->interface, C_SETMODEM);
+	// usb_val = (FTDI_BITMODE_CBUS << 8) | 0xF2; // low byte: bitmask - 1111 0010 - CB1(HI)
+	// usb_transfer(compac, FTDI_TYPE_OUT, FTDI_REQUEST_BITMODE, usb_val, info->interface, C_SETMODEM);
+
+	//usb_transfer command to set the RTS pin high
+	usb_transfer(compac, FTDI_TYPE_OUT, FTDI_REQUEST_MODEM, FTDI_SETRTS_LOW, info->interface, C_SETMODEM);
+
 	cgsleep_ms(30);
 
-	usb_val = (FTDI_BITMODE_CBUS << 8) | 0xF0; // low byte: bitmask - 1111 0000 - CB1(LO)
-	usb_transfer(compac, FTDI_TYPE_OUT, FTDI_REQUEST_BITMODE, usb_val, info->interface, C_SETMODEM);
+	// usb_val = (FTDI_BITMODE_CBUS << 8) | 0xF0; // low byte: bitmask - 1111 0000 - CB1(LO)
+	// usb_transfer(compac, FTDI_TYPE_OUT, FTDI_REQUEST_BITMODE, usb_val, info->interface, C_SETMODEM);
+
+	//usb_transfer command to set the RTS pin low
+	usb_transfer(compac, FTDI_TYPE_OUT, FTDI_REQUEST_MODEM, FTDI_SETRTS_HIGH, info->interface, C_SETMODEM);
+
 	if (info->asic_type == BM1397)
 		cgsleep_ms(1000);
 	else
 		cgsleep_ms(30);
 
-	usb_val = (FTDI_BITMODE_CBUS << 8) | 0xF2; // low byte: bitmask - 1111 0010 - CB1(HI)
-	usb_transfer(compac, FTDI_TYPE_OUT, FTDI_REQUEST_BITMODE, usb_val, info->interface, C_SETMODEM);
+	// usb_val = (FTDI_BITMODE_CBUS << 8) | 0xF2; // low byte: bitmask - 1111 0010 - CB1(HI)
+	// usb_transfer(compac, FTDI_TYPE_OUT, FTDI_REQUEST_BITMODE, usb_val, info->interface, C_SETMODEM);
+
+	//usb_transfer command to set the RTS pin high
+	usb_transfer(compac, FTDI_TYPE_OUT, FTDI_REQUEST_MODEM, FTDI_SETRTS_LOW, info->interface, C_SETMODEM);
+
 	cgsleep_ms(200);
 
 	cgtime(&info->last_reset);
@@ -1065,7 +1084,7 @@ static void compac_gsf_nonce(struct cgpu_info *compac, K_ITEM *item)
 	info->prev_nonce = nonce;
 	asic->prev_nonce = nonce;
 
-	applog(LOG_INFO, "%d: %s %d - Device reported nonce: %08x @ %02x (%d)",
+	applog(LOG_INFO, "%d: %s %d - Device(gsf) reported nonce: %08x @ %02x (%d)",
 		compac->cgminer_id, compac->drv->name, compac->device_id, nonce, job_id, info->tracker);
 
 	if (!opt_gekko_noboost && info->vmask)
@@ -1457,6 +1476,7 @@ static void init_task(struct COMPAC_INFO *info)
 		info->task[3] = ((!opt_gekko_noboost && info->vmask) ? info->midstates : 0x01);
 
 		if (info->mining_state == MINER_MINING) {
+			//void stuff_reverse(unsigned char *dst, unsigned char *src, uint32_t len)
 			stuff_reverse(info->task + 8, work->data + 64, 12);
 			stuff_reverse(info->task + 20, work->midstate, 32);
 			if (!opt_gekko_noboost && info->vmask) {
@@ -1470,6 +1490,7 @@ static void init_task(struct COMPAC_INFO *info)
 		} else {
 			memset(info->task + 8, 0xff, 12);
 		}
+		//add the checksum to the last two bytes
 		unsigned short crc = crc16_false(info->task, info->task_len - 2);
 		info->task[info->task_len - 2] = (crc >> 8) & 0xff;
 		info->task[info->task_len - 1] = crc & 0xff;
@@ -2029,7 +2050,7 @@ static void *compac_mine(void *object)
 		unsigned char jid = info->task[2];
 
 		if (info->asic_type == BM1397)
-		{ 
+		{
 			int k;
 			for (k = (info->task_len - 1); k >= 0; k--)
 			{
@@ -2047,8 +2068,12 @@ static void *compac_mine(void *object)
 				set_ticket(compac, work->work_difficulty, false, false);
 		}
 
+		//send the work to the BM1397
 		err = usb_write(compac, (char *)info->task, task_len, &sent_bytes, C_SENDWORK);
-		//dumpbuffer(compac, LOG_WARNING, "TASK.TX", info->task, task_len);
+
+		//dumpbuffer(compac, LOG_INFO, "WORK.TX", info->task, sent_bytes); //this doesn't print all the 157 or so bytes
+		//pretty_hex(info->task, sent_bytes);
+
 		if (err != LIBUSB_SUCCESS)
 		{
 			applog(LOG_WARNING,"%d: %s %d - usb failure (%d)", compac->cgminer_id, compac->drv->name, compac->device_id, err);
@@ -2558,7 +2583,7 @@ static void *compac_mine2(void *object)
 		unsigned char jid = info->task[2];
 
 		if (info->asic_type == BM1397)
-		{ 
+		{
 			int k;
 			for (k = (info->task_len - 1); k >= 0; k--)
 			{
@@ -2653,11 +2678,8 @@ static void *compac_handle_rx(void *object, int read_bytes, int path)
 	}
 
 	int log_level = (cmd_resp) ? LOG_INFO : LOG_INFO;
-	if (path) {
-		dumpbuffer(compac, log_level, "RX1", info->rx, read_bytes);
-	} else {
-		dumpbuffer(compac, log_level, "RX0", info->rx, read_bytes);
-	}
+	printf("YO compac_handle\n");
+	dumpbuffer(compac, log_level, "RX0", info->rx, read_bytes);
 
 	if (cmd_resp && info->rx[0] == 0x80 && info->frequency_of != (int)(info->chips)) {
 		float frequency = 0.0;
@@ -2753,6 +2775,9 @@ static void *compac_handle_rx(void *object, int read_bytes, int path)
 	return NULL;
 }
 
+/// @brief 
+/// @param object 
+/// @return 
 static void *compac_gsf_nonce_que(void *object)
 {
 	struct cgpu_info *compac = (struct cgpu_info *)object;
@@ -2829,10 +2854,10 @@ static void *compac_listen2(struct cgpu_info *compac, struct COMPAC_INFO *info)
 		while (read_bytes > 0 && pos > 6)
 		{
 #if 0
-applog(LOG_ERR, "%d: %s %d - READ %3d pos %3d state %2d first 16: [%02x %02x %02x %02x %02x %02x %02x %02x]",
+applog(LOG_INFO, "%d: %s %d - READ %3d pos %3d state %2d first 16: [%02x %02x %02x %02x %02x %02x %02x %02x]",
 	compac->cgminer_id, compac->drv->name, compac->device_id, read_bytes, pos, info->mining_state,
 	rx[0], rx[1], rx[2], rx[3], rx[4], rx[5], rx[6], rx[7]);
-applog(LOG_ERR, " [%02x %02x %02x %02x %02x %02x %02x %02x]",
+applog(LOG_INFO, " [%02x %02x %02x %02x %02x %02x %02x %02x]",
 	rx[8], rx[9], rx[10], rx[11], rx[12], rx[13], rx[14], rx[15]);
 #endif
 
@@ -2983,6 +3008,10 @@ applog(LOG_ERR, " [%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x]"
 			if (pos > len)
 				memmove(rx, rx+len, pos-len);
 			pos -= len;
+		}
+
+		if (read_bytes > 0) {
+			dumpbuffer(compac, LOG_INFO, "2RX", rx, read_bytes);
 		}
 
 		if (read_bytes == 0 || pos < 6)

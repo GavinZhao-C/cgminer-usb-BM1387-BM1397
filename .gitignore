@@ -64,3 +64,8 @@ lib/warn-on-use.h
 mkinstalldirs
 
 *.swp
+
+build/
+.idea/
+.vscode/
+cmake-build-debug/
